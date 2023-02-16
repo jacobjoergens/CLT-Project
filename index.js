@@ -126,7 +126,7 @@ const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
 
 // position camera and plane
 camera.position.z = 5;
-plane.rotateX(-Math.PI / 2);
+//plane.rotateX(-Math.PI / 2);
 
 // render loop
 function animate() {
