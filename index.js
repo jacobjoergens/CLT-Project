@@ -1,136 +1,130 @@
-// create scene, camera, and renderer
+// create Three.js scene, camera, and renderer
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 0.1, 1000 );
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 const renderer = new THREE.WebGLRenderer();
-renderer.setSize( window.innerWidth, window.innerHeight );
-document.body.appendChild( renderer.domElement );
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
 
-// create material for dotted line
-const dottedLineMaterial = new THREE.LineDashedMaterial({
-    color: 0x000000,
-    linewidth: 2,
-    dashSize: 5,
-    gapSize: 5
-});
+// set up variables
+const vertices = [];
+let dottedLine, solidLine;
 
-// create geometry for dotted line
-const dottedLineGeometry = new THREE.BufferGeometry().setFromPoints([
-    new THREE.Vector3( 0, 0, 0 ),
-    new THREE.Vector3( 0, 0, 0 )
-]);
+renderer.domElement.addEventListener( 'mousemove', onMouseMove );
+renderer.domElement.addEventListener( 'mousedown', onMouseDown );
 
-// create dotted line object
-const dottedLine = new THREE.Line(dottedLineGeometry, dottedLineMaterial);
-dottedLine.computeLineDistances();
-dottedLine.visible = false;
-scene.add(dottedLine);
+// handle mouse movement
+function onMouseMove(event) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  const mouse = new THREE.Vector2();
+  mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
-// create material for solid line
-const solidLineMaterial = new THREE.LineBasicMaterial({
-    color: 0x000000,
-    linewidth: 2
-});
+  // calculate intersection point with plane
+  const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+  const point = new THREE.Vector3();
+  const raycaster = new THREE.Raycaster();
+  raycaster.setFromCamera(mouse, camera);
+  raycaster.ray.intersectPlane(plane, point);
 
-// create geometry for solid line
-const solidLineGeometry = new THREE.BufferGeometry().setFromPoints([
-    new THREE.Vector3( 0, 0, 0 ),
-    new THREE.Vector3( 0, 0, 0 )
-]);
-
-// create solid line object
-const solidLine = new THREE.Line(solidLineGeometry, solidLineMaterial);
-scene.add(solidLine);
-
-// create array to hold line segments
-const lineSegments = [];
-
-// add event listeners to renderer
-renderer.domElement.addEventListener('mousemove', (event) => {
-    // get mouse position in normalized device coordinates
-    const mouse = new THREE.Vector2(
-        (event.clientX / window.innerWidth) * 2 - 1,
-        -(event.clientY / window.innerHeight) * 2 + 1
-    );
-
-    // create raycaster to test for intersection with plane at z = 0
-    const raycaster = new THREE.Raycaster();
-    raycaster.setFromCamera(mouse, camera);
-    const intersection = raycaster.intersectObject(plane)[0];
-
-    if (intersection) {
-        // snap intersection point to grid of 1 unit squares
-        const point = new THREE.Vector3(
-            Math.round(intersection.point.x),
-            Math.round(intersection.point.y),
-            0
-        );
-
-        // update dotted line geometry to show where new segment would be placed
-        dottedLine.geometry.setFromPoints([solidLine.geometry.vertices[1], point]);
-        dottedLine.visible = true;
+  if (vertices.length > 0) {
+    // create dotted line
+    const material = new THREE.LineDashedMaterial({
+      color: 0x0000ff,
+      dashSize: 0.1,
+      gapSize: 0.1
+    });
+    const lastVertex = vertices[vertices.length - 1];
+    const dx = Math.abs(point.x - lastVertex.x);
+    const dy = Math.abs(point.y - lastVertex.y);
+    let lineGeometry;
+    if (dx > dy) {
+      // horizontal line
+      lineGeometry = new THREE.BufferGeometry().setFromPoints([lastVertex, new THREE.Vector3(point.x, lastVertex.y, 0)]);
     } else {
-        // hide dotted line if no intersection
-        dottedLine.visible = false;
+      // vertical line
+      lineGeometry = new THREE.BufferGeometry().setFromPoints([lastVertex, new THREE.Vector3(lastVertex.x, point.y, 0)]);
     }
-});
+    dottedLine = new THREE.Line(lineGeometry, material);
+    dottedLine.computeLineDistances();
+    scene.add(dottedLine);
+  }
 
-renderer.domElement.addEventListener('mousedown', (event) => {
-    // get mouse position in normalized device coordinates
-    const mouse = new THREE.Vector2(
-        (event.clientX / window.innerWidth) * 2 - 1,
-        -(event.clientY / window.innerHeight) * 2 + 1
-    );
-
-    // create raycaster to test for intersection with plane at z = 0
-    const raycaster = new THREE.Raycaster();
-    raycaster.setFromCamera(mouse, camera);
-    const intersection = raycaster.intersectObject(plane)[0];
-
-    if (intersection) {
-        // snap intersection point to grid of 1 unit squares
-        const point = new THREE.Vector3(
-            Math.round(intersection.point.x),
-            Math.round(intersection.point.y),
-            0
-        );
-
-        if (lineSegments.length === 0) {
-          // add first point to new segment
-          solidLine.geometry.setFromPoints([point, point]);
-        } else {
-          const lastPoint = lineSegments[lineSegments.length - 1].end;
-          const diff = point.clone().sub(lastPoint);
-          if (diff.x === 0 || diff.y === 0) {
-          // new segment is orthogonal to previous segment
-          solidLine.geometry.setFromPoints([lastPoint, point]);
-          lineSegments.push({start: lastPoint, end: point});
-                      // check if segment is closed (i.e. forms a rectangle)
-            const firstPoint = lineSegments[0].start;
-            const lastSegment = lineSegments[lineSegments.length - 1];
-            if (lastSegment.end.equals(firstPoint)) {
-                // exit drawing mode
-                dottedLine.visible = false;
-                renderer.domElement.removeEventListener('mousemove');
-                renderer.domElement.removeEventListener('mousedown');
-            }
-            } else {
-                // new segment is not orthogonal to previous segment
-                solidLine.geometry.setFromPoints([point, point]);
-            }
-        }
-    }
-});
-
-// create plane at z = 0 to intersect with raycaster
-const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
-
-// position camera and plane
-camera.position.z = 5;
-//plane.rotateX(-Math.PI / 2);
-
-// render loop
-function animate() {
-requestAnimationFrame( animate );
-renderer.render( scene, camera );
+  // render scene
+  renderer.render(scene, camera);
 }
-animate();
+
+// handle mouse click
+function onMouseDown(event) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  const mouse = new THREE.Vector2();
+  mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+  const raycaster = new THREE.Raycaster();
+  raycaster.setFromCamera(mouse, camera);
+
+  // calculate intersection point with plane
+  const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+  const point = new THREE.Vector3();
+  raycaster.ray.intersectPlane(plane, point);
+
+  if (vertices.length > 0) {
+    // calculate distances between last vertex and new vertex
+    const lastVertex = vertices[vertices.length - 1];
+    const dx = Math.abs(point.x - lastVertex.x);
+    const dy = Math.abs(point.y - lastVertex.y);
+
+    // use larger distance as length of solid line
+    if (dx > dy) {
+      const lineGeometry = new THREE.BufferGeometry().setFromPoints([lastVertex, new THREE.Vector3(point.x, lastVertex.y, 0)]);
+      solidLine = new THREE.Line(lineGeometry, new THREE.LineBasicMaterial({
+        color: 0x0000ff
+      }));
+    } else {
+      const lineGeometry = new THREE.BufferGeometry().setFromPoints([lastVertex, new THREE.Vector3(lastVertex.x, point.y, 0)]);
+      solidLine = new THREE.Line(lineGeometry, new THREE.LineBasicMaterial({
+        color: 0x0000ff
+      }));
+    }
+
+    // check if polygon is closed
+    if (vertices.length > 2 && point.distanceTo(vertices[0]) < 0.1) {
+      // close polygon
+      const lineGeometry = new THREE.BufferGeometry().setFromPoints([vertices[vertices.length - 1], vertices[0]]);
+      solidLine = new THREE.Line(lineGeometry, new THREE.LineBasicMaterial({
+        color: 0x0000ff
+      }));
+      scene.add(solidLine);
+      scene.remove(dottedLine);
+      dottedLine = null;
+      vertices.push(vertices[0]);
+      alert("Polygon closed!");
+      return;
+    }
+
+    // add solid line to scene
+    scene.add(solidLine);
+    scene.remove(dottedLine);
+    dottedLine = null;
+  } else {
+    // create first vertex
+    const material = new THREE.PointsMaterial({
+      color: 0xff0000
+    });
+    const geometry = new THREE.BufferGeometry().setFromPoints([point]);
+    const vertex = new THREE.Points(geometry, material);
+    scene.add(vertex);
+    vertices.push(point);
+  }
+
+  // render scene
+  renderer.render(scene, camera);
+}
+
+// set camera position and look at origin
+camera.position.set( 0, 0, 5 );
+camera.lookAt( 0, 0, 0 );
+
+// render initial scene
+renderer.render( scene, camera );
+
