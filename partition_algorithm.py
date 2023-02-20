@@ -256,7 +256,7 @@ def extendCurve(ext_corner,corner_lists,dir):
     #print(ext_cross,intersection_cross)
     if(ext_cross==intersection_cross and intersection_list>0):
         corner_lists[intersection_list].reverseCorners()
-        
+        print("Reversing intersection list")
         #intersection_corner = intersection_corner.prev
     return gh.LineSDL(vertex,vect.vector,ext_length), intersection_corner, intersection_list, horver
 
@@ -303,6 +303,7 @@ def doPartition(ext_corner, chord, intersection_corner, intersection_list, corne
     opdir = (dir+1)%2
     a_list = corner_lists[0]
     intersection_vertex = chord[1]
+        
     intersection_edge = intersection_corner.next_edge
     endpts = gh.EndPoints(intersection_edge)
     
@@ -313,24 +314,34 @@ def doPartition(ext_corner, chord, intersection_corner, intersection_list, corne
     if(intersection_corner.vertex in ab_shard[0]):
         ab_shard = ab_shard[::-1]
         
+    
+    
+    leg_index = 0
+        
+    if(ext_corner.prev.next_edge == ray): 
+        #print("forward regime")
+        a_corner = Corner(a_seg,intersection_vertex,ab_shard[0])
+        b_corner = Corner(ab_shard[1],intersection_vertex,chord)
+    else: 
+        #print("backward regime")
+        if(intersection_list>0):
+            intersection_corner = intersection_corner.prev
+            intersection_edge = intersection_corner.next_edge
+            endpts = gh.EndPoints(intersection_edge)
+            ab_shard = [gh.Line(chord[1],endpts.end),gh.Line(chord[1],endpts.start)]
+        a_corner = Corner(ab_shard[1],intersection_vertex,a_seg)
+        b_corner = Corner(chord,intersection_vertex,ab_shard[0])
+        leg_index+=1
+        
     a_prev = [ext_corner.prev,intersection_corner]
     a_next = [intersection_corner.next,ext_corner.next]
     b_prev = [intersection_corner,ext_corner]
     b_next = [ext_corner,intersection_corner.next]
     
-    leg_index = 0
-        
-    if(ext_corner.prev.next_edge == ray): 
-        a_corner = Corner(a_seg,intersection_vertex,ab_shard[0])
-        b_corner = Corner(ab_shard[1],intersection_vertex,chord)
-    else: 
-        a_corner = Corner(ab_shard[1],intersection_vertex,a_seg)
-        b_corner = Corner(chord,intersection_vertex,ab_shard[0])
-        leg_index+=1
-    
-    if(intersection_list>0):
-        a_prev = [ext_corner.prev,intersection_corner]
-        b_prev = [intersection_corner,ext_corner]
+    print(leg_index, intersection_list)
+#    if(intersection_list==0):
+#        a_prev = [ext_corner.prev,intersection_corner]
+#        b_prev = [intersection_corner,ext_corner]
         
     a_list.stitch(a_prev[leg_index], a_corner, a_next[leg_index])
     a_list.head = a_corner
@@ -350,7 +361,7 @@ def doPartition(ext_corner, chord, intersection_corner, intersection_list, corne
         corner_lists.append(b_list)
     else: 
         corner_lists.pop(intersection_list)
-    return corner_lists, b_list, b_prev[leg_index].vertex
+    return corner_lists, b_list, a_corner.prev_edge
     
 def iterLoop(corners): 
     current_corner = corners.head
@@ -380,10 +391,10 @@ def nonDegenerateDecomposition(dir,corner_lists,regions,total_count):
     else: 
         chord, intersection_corner, intersection_list, horver = extendCurve(current_corner,corner_lists,dir)
         corner_lists, b_list, vertex = doPartition(current_corner, chord, intersection_corner, intersection_list, corner_lists, horver, dir)
-#        for i in range(len(corner_lists)):
-#            print(i, corner_lists[i].length, corner_lists[i].concave_count)
+        for i in range(len(corner_lists)):
+            print("Stats: ",i, corner_lists[i].length, corner_lists[i].concave_count)
         nonDegenerateDecomposition(dir,corner_lists,regions,total_count)
-#        edges, vertex = iterLoop(corner_lists[0])
+#        edges, vert = iterLoop(corner_lists[-1])
 #        return edges, vertex
 """
 Main: 
@@ -418,7 +429,11 @@ else:
 regions = []
 nonDegenerateDecomposition(bias_dir, corner_lists, regions,1)
 #print("Decomposing...")
-#edges, vertex = nonDegenerateDecomposition(bias_dir, corner_lists, regions)
+#edges, vertex = nonDegenerateDecomposition(bias_dir, corner_lists, regions,1)
+#print("Decomposing...")
+#edges, vertex = nonDegenerateDecomposition(bias_dir, corner_lists, regions,1)
+#print("Decomposing...")
+#edges, vertex = nonDegenerateDecomposition(bias_dir, corner_lists, regions,1)
 #print("Decomposing...")
 #edges, vertex = nonDegenerateDecomposition(bias_dir, corner_lists, regions)
 #print("Decomposing...")
@@ -427,9 +442,5 @@ nonDegenerateDecomposition(bias_dir, corner_lists, regions,1)
 #edges, vertex = nonDegenerateDecomposition(bias_dir, corner_lists, regions)
 #print("Decomposing...")
 #edges, vertex = nonDegenerateDecomposition(bias_dir, corner_lists, regions)
-#print("Decomposing...")
-#edges, vertex = nonDegenerateDecomposition(bias_dir, corner_lists, regions)
-#print("Decomposing...")
-#edges, vertex = nonDegenerateDecomposition(bias_dir, corner_lists, regions)
-        
+#edges, vertex = iterLoop(corner_lists[2])        
         
