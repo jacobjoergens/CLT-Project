@@ -9,21 +9,49 @@ document.body.appendChild(renderer.domElement);
 // set up variables
 let vertices = [];
 let dottedLine, lineGeometry;
-let snapLine; 
-let osnapOffset = .2;
+let h_snapLine = [];
+let v_snapLine = [];
+let previewGroup;
+let osnapOffset = .05;
 
 renderer.domElement.addEventListener('mousemove', onMouseMove);
 renderer.domElement.addEventListener('mousedown', onMouseDown);
 
+function createSolidLine() {
+    dottedLine.material.dispose();
+    const solidMaterial = new THREE.LineBasicMaterial({ color: 0xbfffbf });
+    dottedLine.material = solidMaterial;
+    var solidLine = dottedLine.clone();
+    dottedLine.geometry.dispose();
+    scene.remove(dottedLine);
+    return solidLine;
+}
+
 function drawCircle(x,y){
-    const radius = .2;
+    const radius = osnapOffset;
     const segments = 32;
     const material = new THREE.MeshBasicMaterial({ color: 0xd3d3d3 });
     const geometry = new THREE.CircleGeometry(radius, segments);
     const circle = new THREE.Mesh(geometry, material);
     circle.position.set(x, y, 0);
+    circle.visible = false;
     return circle;
 } 
+
+function drawPreview(snapGroup, lastVertex){
+    previewGroup = snapGroup.clone();
+    ortho_vertex = previewGroup.children[0].position;
+
+    if(ortho_vertex.x.toFixed(5)==lastVertex.x.toFixed(5)||ortho_vertex.y.toFixed(5)==lastVertex.y.toFixed(5)){
+        return null;
+    } else {
+        console.log(ortho_vertex.x,lastVertex.x,ortho_vertex.y,lastVertex.y)
+        previewGroup.children[0].visible = true;
+        previewGroup.children[1].visible = true;
+        scene.add(previewGroup);
+        return ortho_vertex;
+    }
+}
 // handle mouse movement
 function onMouseMove(event) {
     const rect = renderer.domElement.getBoundingClientRect();
@@ -38,46 +66,20 @@ function onMouseMove(event) {
     raycaster.setFromCamera(mouse, camera);
     raycaster.ray.intersectPlane(plane, point); 
 
-    if (vertices.length > 0) {
-        //osnap 
-        if(snapLine){
-            snapLine.geometry.dispose();
-            snapLine.material.dispose();
-            scene.remove(snapLine);
-            scene.remove(circle);
-        }
-        const snap_material = new THREE.LineBasicMaterial({color: 0xd3d3d3}); 
-        let snapGeometry, start, end; 
-        for (let i = 0; i < vertices.length-2; i++) {
-            vertex = vertices[i]
-            if(mouse.x<=vertex.x+osnapOffset && mouse.x>=vertex.x-osnapOffset){
-                console.log("x match");
-                start = new THREE.Vector3(vertex.x, window.innerHeight / 2, 0);
-                end = new THREE.Vector3(vertex.x, - window.innerHeight / 2, 0);
-                circle = drawCircle(vertex.x, vertex.y)
-                continue;
-            } else if(mouse.y<=vertex.y+osnapOffset && mouse.y>=vertex.y-osnapOffset){
-                console.log("y match");
-                start = new THREE.Vector3(-window.innerWidth / 2, vertex.y, 0);
-                end = new THREE.Vector3(window.innerWidth / 2, vertex.y, 0); 
-                circle = drawCircle(vertex.x, vertex.y)
-                continue;
-            }
-        }
-        if(start && end){
-            snapGeometry = new THREE.BufferGeometry().setFromPoints([start,end])
-            snapLine = new THREE.Line(snapGeometry,snap_material)
-            scene.add(snapLine);
-            scene.add(circle);
-        }
-
+    if (vertices.length > 0) {   
+        //reset scene wrt dottedLine
         if (dottedLine) {
             dottedLine.geometry.dispose();
-            dottedLine.material.dispose();
+            //dottedLine.material.dispose();
             scene.remove(dottedLine);
-            start = null;
-            end = null;
         }
+
+        if(previewGroup){
+            previewGroup.visible = false;
+            scene.remove(previewGroup);
+            previewGroup = null;
+        }
+
         // create dotted line
         const material = new THREE.LineDashedMaterial({
             color: 0xffffff,
@@ -87,13 +89,31 @@ function onMouseMove(event) {
         const lastVertex = vertices[vertices.length - 1];
         const dx = Math.abs(point.x - lastVertex.x);
         const dy = Math.abs(point.y - lastVertex.y);
+        let intersects, orthogonal_vertex;
+        const order = [lastVertex, point];
         if (dx > dy) {
             // horizontal line
-            lineGeometry = new THREE.BufferGeometry().setFromPoints([lastVertex, new THREE.Vector3(point.x, lastVertex.y, 0)]);
+            order.reverse();
+            if(vertices.length>2){
+                intersects = raycaster.intersectObjects(v_snapLine.slice(0,-2));
+            }
         } else {
             // vertical line
-            lineGeometry = new THREE.BufferGeometry().setFromPoints([lastVertex, new THREE.Vector3(lastVertex.x, point.y, 0)]);
+            if(vertices.length>2){
+                intersects = raycaster.intersectObjects(h_snapLine.slice(0,-2));
+            }
         }
+        if(intersects){
+            if(intersects[0]){
+                    orthogonal_vertex = drawPreview(intersects[0].object.parent, lastVertex);
+                    if(orthogonal_vertex){
+                        order[order.indexOf(point)]=orthogonal_vertex;
+            
+                    }
+            }
+        }
+        
+        lineGeometry = new THREE.BufferGeometry().setFromPoints([lastVertex, new THREE.Vector3(order[0].x, order[1].y, 0)]);
         dottedLine = new THREE.Line(lineGeometry, material);
         dottedLine.computeLineDistances();
         scene.add(dottedLine);
@@ -102,24 +122,22 @@ function onMouseMove(event) {
     renderer.render(scene, camera);
 }
 
-function createSolidLine() {
-    dottedLine.material.dispose();
-    const solidMaterial = new THREE.LineBasicMaterial({ color: 0xbfffbf });
-    dottedLine.material = solidMaterial;
-    var solidLine = dottedLine.clone();
-    dottedLine.geometry.dispose();
-    scene.remove(dottedLine);
-    return solidLine
-}
-
 // handle mouse click
 function onMouseDown(event) {
+    // create first vertex
+    const rect = renderer.domElement.getBoundingClientRect();
+    const mouse = new THREE.Vector2();
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(mouse, camera);
+
     if (vertices.length > 0) {
         const positionAttribute = lineGeometry.getAttribute('position');
-        const startEndpoint = new THREE.Vector3().fromBufferAttribute(positionAttribute, 0);
-        const endEndpoint = new THREE.Vector3().fromBufferAttribute(positionAttribute, 1);
+        const endpoint = new THREE.Vector3().fromBufferAttribute(positionAttribute, 1);
         // check if polygon is closed
-        if (vertices.length > 2 && endEndpoint.distanceTo(vertices[0]) < 0.1) {
+        if (vertices.length > 2 && endpoint.distanceTo(vertices[0]) < 0.1) {
             console.log("polygon closed");
             // close polygon
             solidLine = createSolidLine(vertices[vertices.length - 1], vertices[0])
@@ -133,31 +151,40 @@ function onMouseDown(event) {
         // add solid line to scene
         solidLine = createSolidLine()
         scene.add(solidLine);
-        vertices.push(endEndpoint);
+        vertices.push(endpoint);
     } else {
-        // create first vertex
-        const rect = renderer.domElement.getBoundingClientRect();
-        const mouse = new THREE.Vector2();
-        mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-        mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
-        const raycaster = new THREE.Raycaster();
-        raycaster.setFromCamera(mouse, camera);
-
         // calculate intersection point with plane
         const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
         const point = new THREE.Vector3();
         raycaster.ray.intersectPlane(plane, point);
-        const material = new THREE.PointsMaterial({
-            color: 0xffffff,
-            size: .5
-        });
-        const geometry = new THREE.BufferGeometry().setFromPoints([point]);
-        const vertex = new THREE.Points(geometry, material);
-        //scene.add(vertex);
         vertices.push(point);
     }
     // render scene
+    //create circle at vertex 
+    vertex = vertices[vertices.length-1];
+    circle = drawCircle(vertex.x, vertex.y);
+
+    const material = new THREE.LineBasicMaterial({ color: 0xbb6a79, linewidth: osnapOffset});
+
+    // create a horizontal line that spans the width of the window
+    const horizontalGeometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-window.innerWidth / 2, vertex.y, 0),new THREE.Vector3(window.innerWidth / 2, vertex.y, 0)]);
+    const horizontalLine = new THREE.LineSegments(horizontalGeometry, material);
+    horizontalLine.visible = false;
+    const h_group = new THREE.Group();
+    h_group.add(circle);
+    h_group.add(horizontalLine);
+    scene.add(h_group);
+    h_snapLine.push(h_group);
+
+    // create a vertical line that spans the height of the window
+    const verticalGeometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(vertex.x, -window.innerHeight / 2, 0),new THREE.Vector3(vertex.x, window.innerHeight / 2, 0)]);
+    const verticalLine = new THREE.Line(verticalGeometry, material);
+    verticalLine.visible = false;
+    const v_group = new THREE.Group();
+    v_group.add(circle);
+    v_group.add(verticalLine);
+    scene.add(v_group);
+    v_snapLine.push(v_group);
     renderer.render(scene, camera);
 }
 
