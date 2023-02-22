@@ -60,16 +60,18 @@ class cornerList:
         self.length = 0
         self.concave_count = 0 
         self.colinear_pairs = 0 
+        self.exterior = False 
         
     def make(self, new_corner): 
-        new_corner.next = self.head
-        if(self.head!=None):
-            self.head.prev = new_corner
-        else: 
+        if(self.tail==None):
+            self.head = new_corner
             self.tail = new_corner
-        self.head = new_corner
-        self.head.prev = self.tail
-        self.tail.next = self.head
+        else: 
+            new_corner.prev = self.tail 
+            self.tail.next = new_corner 
+            self.tail = new_corner
+            self.tail.next = self.head
+            self.head.prev = self.tail
         self.length+=1
 
     def stitch(self, prev_corner, new_corner, next_corner): 
@@ -84,6 +86,8 @@ class cornerList:
         new_corner.prev = prev_corner
         setattr(next_corner,horver[0],new_corner.next_edge)
         setattr(prev_corner,horver[1],new_corner.prev_edge)
+        next_corner.assignLegs(next_corner.prev_edge,next_corner.next_edge)
+        prev_corner.assignLegs(prev_corner.prev_edge,prev_corner.next_edge)
         
     def updateState(self):
         start = self.head
@@ -95,18 +99,18 @@ class cornerList:
             self.concave_count+=1*current_corner.concave
             current_corner = current_corner.next
     
-    def reverseCorners(self):
-        current = self.head
-        for i in range(self.length):
-            tmp = current.prev
-            current.prev = current.next
-            current.next = tmp
-            tmp_edge = current.prev_edge
-            current.prev_edge = current.next_edge
-            current.next_edge = tmp_edge
-            current = current.next
-        self.tail = self.head.prev
-        
+#    def reverseCorners(self):
+#        print("Reversing intersection list")
+#        current = self.head
+#        for i in range(self.length):
+#            tmp = current.prev
+#            current.prev = current.next
+#            current.next = tmp
+#            tmp_edge = current.prev_edge
+#            current.prev_edge = current.next_edge
+#            current.next_edge = tmp_edge
+#            current = current.next
+#        self.tail = self.head.prev
         
 def drawBounding(vertices):
     sorted_indices = [i[0] for i in sorted(enumerate(vertices), key=lambda x:(x[1][0],x[1][1]))]
@@ -118,49 +122,51 @@ def drawBounding(vertices):
 """
 A leftmost point must be convex.
 Call that vertex V, the previous one is U and the next one is W.
-Find the vectors a = U - V and b = W - V. Now compute z = ax * by - ay * bx and note the sign of z.
-(This is the z component of the cross product [a 0] X [b 0]. The sign says whether going from U to V to W is a "left turn" or "right turn" in the 2D plane.)
-Then continue around the polygon. At each vertex do the same computation where V is the current vertex, U the previous one, and W the next. If the result has the same sign as the first, it's concave, else convex.
+Find the vectors a = U - V and b = W - V. Compute the cross-product of a and b 
+Then continue around the polygon. At each vertex do the same computation If the result has
+ the same sign as the first, it's concave, else convex.
 """    
 def filterConcaveVertices(curve):
     concave = []
     labelled_edges = []
     if(len(curve)>1):
-        inside = 0 
         max_area_index = argmax(gh.Area(curve).area)
         curve.insert(0,curve.pop(max_area_index))
-    else:
-        inside = 0
     corner_lists = []
     for i in range(len(curve)):
         corner_lists.append(cornerList())
+        if(i==0):
+            corner_lists[0].exterior = True
         edges, vertices = gh.Explode(curve[i],False)
         vertices.pop(-1)
         bounding, leftmost = drawBounding(vertices)
+        
+        if(i==0 and gh.CrossProduct(edges[(leftmost-1)%len(vertices)],edges[leftmost%len(vertices)],True).vector[2]==-1):
+            flow = -1
+        elif(i>0 and gh.CrossProduct(edges[(leftmost-1)%len(vertices)],edges[leftmost%len(vertices)],True).vector[2]==1):
+            flow = -1
+        else: 
+            flow = 1
         for j in range(len(vertices)):
-            V = vertices[(leftmost+j)%len(vertices)]
-            leg_a = edges[(leftmost+j-1)%len(vertices)]
-            leg_b = edges[(leftmost+j)%len(vertices)]
-            z = gh.CrossProduct(leg_a,leg_b,False).vector
+            V = vertices[(leftmost+j*flow)%len(vertices)]
+            
+            if(flow==-1):
+                next_edge = edges[(leftmost+(j+1)*flow)%len(vertices)]
+                prev_edge = edges[(leftmost+j*flow)%len(vertices)]
+            else:
+                next_edge = edges[(leftmost+j*flow)%len(vertices)]
+                prev_edge = edges[(leftmost+(j-1)*flow)%len(vertices)]
+            z = gh.CrossProduct(prev_edge,next_edge,True).vector
             dot = gh.DotProduct(z,gh.UnitZ(1),True)
-            labelled_edges.append(sorted(gh.EndPoints(leg_a),key=lambda coor: (coor[0],coor[1])))
-            new_corner = Corner(leg_b, V, leg_a)
-            if(j==0):
-                sign = dot
-                if(i>inside):
-                    concave.append(V)
-                    new_corner.concave=True
-                    corner_lists[i].concave_count+=1
-            elif(i==inside and dot!=sign):
+            labelled_edges.append(sorted(gh.EndPoints(next_edge),key=lambda coor: (coor[0],coor[1])))
+            new_corner = Corner(prev_edge, V, next_edge)
+            
+            if(dot==-1):
                 concave.append(V)
                 new_corner.concave=True
                 corner_lists[i].concave_count+=1
-            elif(i>inside and dot==sign):
-                concave.append(V)
-                new_corner.concave=True
-                corner_lists[i].concave_count+=1
-                
             corner_lists[i].make(new_corner)
+            
     return concave, labelled_edges, corner_lists, bounding
 
 def findCogridVertices(concave, ind):
@@ -209,7 +215,6 @@ def sortTransverseSegments(corner, corner_lists, horver, dir, oper):
             if(current_edge!=current_corner.prev_edge):
                 endpts = gh.EndPoints(current_edge)
                 opend = sorted(endpts, key=lambda x: x[opdir])
-#                print(oper, endpts[0][dir], corner.vertex[dir])
                 if(oper(endpts[0][dir],corner.vertex[dir])):
                     if(opend[0][opdir]<=corner.vertex[opdir] and opend[1][opdir]>=corner.vertex[opdir]):
                         current_distance = abs(endpts[0][dir]-corner.vertex[dir])
@@ -221,14 +226,12 @@ def sortTransverseSegments(corner, corner_lists, horver, dir, oper):
                             intersection_corner = current_corner
                             ext_length = current_distance
                             intersection_list = i
-                        #print(i,ext_length,current_distance,corner.vertex[dir],endpts[0][dir],mid)
             current_corner = current_corner.next
     return intersection_corner, ext_length, intersection_list
                 
 def extendCurve(ext_corner,corner_lists,dir):
     horver = ["horizontal","vertical"]
-    ray = getattr(ext_corner,horver[dir])
-    endpts = sorted(gh.EndPoints(ray),key = lambda x: x[dir])
+    endpts = sorted(gh.EndPoints(getattr(ext_corner,horver[dir])),key = lambda x: x[dir])
     vertex = ext_corner.vertex
     
     if(vertex==endpts[0]):
@@ -244,13 +247,6 @@ def extendCurve(ext_corner,corner_lists,dir):
         oper = operator.gt
     
     intersection_corner, ext_length, intersection_list = sortTransverseSegments(ext_corner, corner_lists, horver, dir, oper)
-    ext_cross = gh.CrossProduct(ext_corner.prev_edge,ext_corner.next_edge,True).vector
-    intersection_cross = gh.CrossProduct(intersection_corner.prev_edge,intersection_corner.next_edge,True).vector
-    #print(ext_cross,intersection_cross)
-    if(ext_cross==intersection_cross and intersection_list>0):
-        print("Reversing intersection list")
-        corner_lists[0].reverseCorners()
-        #intersection_corner = intersection_corner.prev
     return gh.LineSDL(vertex,vect.vector,ext_length), intersection_corner, intersection_list, horver
 
 def updateColCounts(shortlist, longlist, corner, dir):
@@ -283,6 +279,7 @@ def cornersToCurve(corner_list):
         segments.append(curcorner.next_edge)
         curcorner = curcorner.next
     curve = gh.JoinCurves(segments,False)
+    print(curve)
     return curve
 """
 Definitions:
@@ -296,7 +293,6 @@ def doPartition(ext_corner, chord, intersection_corner, intersection_list, corne
     opdir = (dir+1)%2
     a_list = corner_lists[0]
     intersection_vertex = chord[1]
-        
     intersection_edge = intersection_corner.next_edge
     endpts = gh.EndPoints(intersection_edge)
     
@@ -304,33 +300,22 @@ def doPartition(ext_corner, chord, intersection_corner, intersection_list, corne
     a_seg = gh.JoinCurves([chord,ray],False)
     ab_shard = [gh.Line(chord[1],endpts.start),gh.Line(chord[1],endpts.end)]
     
-    #make ab_shard[1] the segment attached to B-corner
-    if(ray==ext_corner.next_edge):
-        perp = ext_corner.prev_edge
-    else: 
-        perp = ext_corner.next_edge
-    
-    perp_ends = gh.EndPoints(perp)
-    if(perp_ends[0]==ext_corner.vertex):
-        perp_vect = gh.Vector2Pt(ext_corner.vertex,perp_ends[1],True).vector
-    else: 
-        perp_vect = gh.Vector2Pt(ext_corner.vertex,perp_ends[0],True).vector
-    
-    if(gh.DotProduct(perp_vect,ab_shard[0],True)==1):
+    #assert affiliation between ab_shard[0] and a_corner
+    if(ab_shard[0][1]!=intersection_corner.next.vertex):
         ab_shard = ab_shard[::-1]
-        
-    if(intersection_corner.vertex==ab_shard[1][1]):
-        b_corner = Corner(ab_shard[1],intersection_vertex,chord)
-        b_prev = intersection_corner
-        b_next = ext_corner
-        a_corner = Corner(a_seg,intersection_vertex,ab_shard[0])
-        a_prev = ext_corner.prev
+    
+    if(ray==ext_corner.prev_edge):
+        a_corner = Corner(a_seg, intersection_vertex, ab_shard[0])
+        a_prev = ext_corner.prev 
         a_next = intersection_corner.next
-    else: 
-        a_corner = Corner(ab_shard[0],intersection_vertex,a_seg)
-        a_prev = intersection_corner
+        b_corner = Corner(ab_shard[1], intersection_vertex, chord)
+        b_prev = intersection_corner 
+        b_next = ext_corner
+    elif(ray==ext_corner.next_edge):
+        a_corner = Corner(ab_shard[1], intersection_vertex, a_seg)
+        a_prev = intersection_corner 
         a_next = ext_corner.next
-        b_corner = Corner(chord,intersection_vertex,ab_shard[1])
+        b_corner = Corner(chord, intersection_vertex, ab_shard[0])
         b_prev = ext_corner
         b_next = intersection_corner.next
         
@@ -352,7 +337,7 @@ def doPartition(ext_corner, chord, intersection_corner, intersection_list, corne
     else: 
         corner_lists.pop(intersection_list)
     
-    return corner_lists, b_list, ab_shard[0]
+    return corner_lists, b_list, chord
     
 def iterLoop(corners): 
     current_corner = corners.head
@@ -365,27 +350,27 @@ def iterLoop(corners):
         current_corner = current_corner.next
     return edges, vertices
 
-def nonDegenerateDecomposition(dir,corner_lists,regions,total_count):
+def nonDegenerateDecomposition(dir,corner_lists,regions,pattern):
     total_count = 0 
+    ext_corner = None
     for i in range(len(corner_lists)):
         total_count+=corner_lists[i].concave_count
-        if(corner_lists[i].concave_count>0):
+        if(corner_lists[i].concave_count>0 and ext_corner==None):
             current_corner = corner_lists[i].head
             while(current_corner.concave==False): 
                 current_corner = current_corner.next
             corner_lists.insert(0,corner_lists.pop(i))
-            break
+            ext_corner = current_corner
     if(total_count==0):
         for corner_list in corner_lists:
             regions.append(cornersToCurve(corner_list))
-        return regions
     else: 
         chord, intersection_corner, intersection_list, horver = extendCurve(current_corner,corner_lists,dir)
         corner_lists, b_list, vertex = doPartition(current_corner, chord, intersection_corner, intersection_list, corner_lists, horver, dir)
-        for i in range(len(corner_lists)):
-#            print("Stats: ",i, corner_lists[i].length, corner_lists[i].concave_count)
-        nonDegenerateDecomposition(dir,corner_lists,regions,total_count)
-#        edges, vertex = iterLoop(corner_lists[-1])
+        if((pattern+1)%2==0):
+            dir = (dir+1)%2
+        nonDegenerateDecomposition(dir,corner_lists,regions,pattern+1)
+#        edges, vertex = iterLoop(corner_lists[0])
 #        return edges, vertex
 """
 Main: 
@@ -418,20 +403,4 @@ else:
     cogrid_pairs = y_col+x_col
 
 regions = []
-nonDegenerateDecomposition(bias_dir, corner_lists, regions,1)
-#print("Decomposing...")
-#edges, vertex = nonDegenerateDecomposition(bias_dir, corner_lists, regions,1)
-#print("Decomposing...")
-#edges, vertex = nonDegenerateDecomposition(bias_dir, corner_lists, regions,1)
-#print("Decomposing...")
-#edges, vertex = nonDegenerateDecomposition(bias_dir, corner_lists, regions,1)
-#print("Decomposing...")
-#edges, vertex = nonDegenerateDecomposition(bias_dir, corner_lists, regions,1)
-#print("Decomposing...")
-#edges, vertex = nonDegenerateDecomposition(bias_dir, corner_lists, regions,1)
-#print("Decomposing...")
-#edges, vertex = nonDegenerateDecomposition(bias_dir, corner_lists, regions,1)
-#print("Decomposing...")
-#edges, vertex = nonDegenerateDecomposition(bias_dir, corner_lists, regions,1)
-#edges, vertex = iterLoop(corner_lists[2])        
-        
+nonDegenerateDecomposition(bias_dir, corner_lists, regions, 0)
