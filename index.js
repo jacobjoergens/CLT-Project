@@ -1,13 +1,18 @@
-//import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-
 // create Three.js scene, camera, and renderer
+console.log("My Three.js app is starting...");
+
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+console.log("hello");
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, .1, 1000);
 const renderer = new THREE.WebGLRenderer({alpha: true});
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 //document.body.style.background = 0x000000;
-//const controls = new OrbitControls(camera, renderer.domElement);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableRotate = false;
 
 // set up variables
 let vertices = [];
@@ -21,6 +26,7 @@ let osnapOffset = window.innerHeight/500;
 
 renderer.domElement.addEventListener('mousemove', onMouseMove);
 renderer.domElement.addEventListener('mousedown', onMouseDown);
+renderer.domElement.addEventListener('mouseup', onMouseUp);
 
 function createSolidLine() {
     dottedLine.material.dispose();
@@ -76,6 +82,7 @@ var raycaster = new THREE.Raycaster();
 
 // handle mouse movement
 function onMouseMove(event) {
+    console.log("reading");
     event.preventDefault();
     mouse.x = ( ( event.clientX - rect.left ) / ( rect.right - rect.left ) ) * 2 - 1;
     mouse.y = - ( ( event.clientY - rect.top ) / ( rect.bottom - rect.top) ) * 2 + 1;
@@ -125,25 +132,35 @@ function onMouseMove(event) {
             // vertical line
             snapSet = h_snapLine;
         }
-        if(vertices.length>2){
-            snap_intersects = raycaster.intersectObjects(snapSet);
-        }
+        nextVertex = new THREE.Vector3(order[0].x, order[1].y, 0);
+        direction = new THREE.Vector3().subVectors(nextVertex, lastVertex);
         
-        if(snap_intersects){
-            if(snap_intersects[0]){
+        if(segments.length>0){
+            parallel = lastVertex.clone().sub(vertices[vertices.length-2]).normalize();
+            if(direction.dot(parallel)<0){
+                order.reverse();
+            }
+        } 
+
+        if (vertices.length > 2) {
+            snap_intersects = raycaster.intersectObjects(snapSet);
+            if (snap_intersects) {
+                if (snap_intersects[0]) {
                     orthogonal_vertex = drawPreview(snap_intersects[0].object.parent, lastVertex);
-                    if(orthogonal_vertex){
-                        order[order.indexOf(point)]=orthogonal_vertex;
+                    if (orthogonal_vertex) {
+                        order[order.indexOf(point)] = orthogonal_vertex;
                     }
+                }
             }
         }
         nextVertex = new THREE.Vector3(order[0].x, order[1].y, 0);
+        direction = new THREE.Vector3().subVectors(nextVertex, lastVertex);
         lineGeometry = new THREE.BufferGeometry().setFromPoints([lastVertex, nextVertex]);
         dottedLine = new THREE.Line(lineGeometry, material);
         dottedLine.computeLineDistances();
         
 
-        const direction = new THREE.Vector3().subVectors(nextVertex, lastVertex);
+        
         const intersect_caster = new THREE.Raycaster(lastVertex,direction.normalize());
         for (const seg of segments.slice(0,-1)){
             // Check for intersection between the ray and the line segment
@@ -153,10 +170,12 @@ function onMouseMove(event) {
             if (intersection) {
                 if(intersection[0]){
                     if(intersection[0].distance<=lastVertex.distanceTo(nextVertex)){
-                        circle = drawIntersection(intersection[0].point);
-                        crossings.add(circle);
-                        crossings.visible = true;
-                        scene.add(crossings);
+                        if(!intersection[0].point.equals(vertices[0])){
+                            circle = drawIntersection(intersection[0].point);
+                            crossings.add(circle);
+                            crossings.visible = true;
+                            scene.add(crossings);
+                        }
                     }
                 }
             }
@@ -190,7 +209,7 @@ function setSnapLines(vertex, lastVertex, secondLast){
     
     // create viable, cardinal snapLines around new vertex
     for(const el of cardinal){
-        if(el.equals(last_direction)||(second_direction && el.equals(second_direction))){
+        if(el.equals(last_direction)||(second_direction&&el.equals(second_direction))){
             continue;
         }else if(el.y==0){
             a = new THREE.Vector3(lastVertex.x,lastVertex.y,0);
@@ -216,10 +235,31 @@ function setSnapLines(vertex, lastVertex, secondLast){
     }
 }
 
+function onMouseUp(event) {
+
+    if(crossings.children.length>0){
+        crossings.traverse((child) => {
+            if (child instanceof THREE.Mesh) {
+              child.material.color.set(0xbb6a79);
+            }
+          });
+        renderer.render(scene, camera);
+        return;
+    }
+}
 // handle mouse click
 function onMouseDown(event) {
     event.preventDefault();
-    
+
+    if(crossings.children.length>0){
+        crossings.traverse((child) => {
+            if (child instanceof THREE.Mesh) {
+              child.material.color.set('red');
+            }
+          });
+        renderer.render(scene, camera);
+        return;
+    }
     if (vertices.length > 0) {
         const positionAttribute = lineGeometry.getAttribute('position');
         if(vertices.length==1){
@@ -267,4 +307,18 @@ camera.lookAt(0, 0, 0);
 
 // render initial scene
 renderer.render(scene, camera);
+
+
+animate();
+function animate() {
+    // update the controls
+    controls.update();
+
+    // render the scene
+    renderer.render(scene, camera);
+
+    // request the next frame of the animation loop
+    requestAnimationFrame(animate);
+}
+  
 
