@@ -66,48 +66,23 @@ function drawIntersection(vertex){
     return circle;
 }
 
-function setSnapLines(vertex, direction){
-    circle = drawCircle(vertex.x, vertex.y);
 
-    const material = new THREE.LineBasicMaterial({ color: 0xb8a5a3, opacity: 0.25, transparent: true});
+const rect = renderer.domElement.getBoundingClientRect();
+var mouse = new THREE.Vector2();
+const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+var point = new THREE.Vector3();
+var raycaster = new THREE.Raycaster();
 
-    // create a line that spans either the height or width of the window
-    if(direction=="horizontal"){
-        a = new THREE.Vector3(-window.innerWidth / 2, vertex.y, 0);
-        b = new THREE.Vector3(window.innerWidth / 2, vertex.y, 0);    
-    } else { 
-        a = new THREE.Vector3(vertex.x, -window.innerHeight / 2, 0);
-        b = new THREE.Vector3(vertex.x, window.innerWidth / 2, 0);
-    }
-    const snapGeometry = new THREE.BufferGeometry().setFromPoints([a,b]);
-    const snapLine = new THREE.Line(snapGeometry, material);
-    snapLine.visible = false;
-    const group = new THREE.Group();
-    group.add(circle);
-    group.add(snapLine);
-    scene.add(group);
-    if(direction=="horizontal"){
-        h_snapLine.push(group);
-    } else { 
-        v_snapLine.push(group);
-    }
-}
 
 // handle mouse movement
 function onMouseMove(event) {
-    const rect = renderer.domElement.getBoundingClientRect();
-    const mouse = new THREE.Vector2();
+    event.preventDefault();
     mouse.x = ( ( event.clientX - rect.left ) / ( rect.right - rect.left ) ) * 2 - 1;
     mouse.y = - ( ( event.clientY - rect.top ) / ( rect.bottom - rect.top) ) * 2 + 1;
     
     // calculate intersection point with plane
-    const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
-    //plane.rotateX(-Math.PI / 2);
-    const point = new THREE.Vector3();
-    const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(mouse, camera);
     raycaster.ray.intersectPlane(plane, point); 
-    raycaster.params.LineThreshold = 0.1;
 
     if (vertices.length > 0) {   
         //reset scene wrt dottedLine
@@ -136,12 +111,11 @@ function onMouseMove(event) {
             opacity: 0.75,
             transparent: true
         });
-        //const material = new THREE.LineBasicMaterial({color: 0xbfffbf});
+
         const lastVertex = vertices[vertices.length - 1];
         const dx = Math.abs(point.x - lastVertex.x);
         const dy = Math.abs(point.y - lastVertex.y);
         let snap_intersects, orthogonal_vertex;
-        let cross_intersects;
         const order = [lastVertex, point];
         if (dx > dy) {
             // horizontal line
@@ -152,7 +126,7 @@ function onMouseMove(event) {
             snapSet = h_snapLine;
         }
         if(vertices.length>2){
-            snap_intersects = raycaster.intersectObjects(snapSet.slice(0,-2));
+            snap_intersects = raycaster.intersectObjects(snapSet);
         }
         
         if(snap_intersects){
@@ -171,7 +145,6 @@ function onMouseMove(event) {
 
         const direction = new THREE.Vector3().subVectors(nextVertex, lastVertex);
         const intersect_caster = new THREE.Raycaster(lastVertex,direction.normalize());
-        intersect_caster.params.LineThreshold = 0.1;
         for (const seg of segments.slice(0,-1)){
             // Check for intersection between the ray and the line segment
             const intersection = intersect_caster.intersectObject(seg);
@@ -188,7 +161,7 @@ function onMouseMove(event) {
                 }
             }
         }
-        console.log(crossings.children)
+
         if(crossings.children!=[]){
             scene.add(dottedLine);
         }
@@ -197,20 +170,61 @@ function onMouseMove(event) {
     renderer.render(scene, camera);
 }
 
+function setSnapLines(vertex, lastVertex, secondLast){
+
+    const material = new THREE.LineBasicMaterial({ color: 0xb8a5a3, opacity: 0.25, transparent: true});
+
+    const cardinal = [
+        new THREE.Vector3(1,0,0),
+        new THREE.Vector3(-1,0,0),
+        new THREE.Vector3(0,1,0),
+        new THREE.Vector3(0,-1,0)
+    ];
+    //get unviable directions
+    const last_direction = new THREE.Vector3().subVectors(vertex,lastVertex).normalize().round();
+    let second_direction;
+    if(secondLast!=null){
+        second_direction = new THREE.Vector3().subVectors(secondLast,lastVertex).normalize().round();
+    }
+    console.log(last_direction, second_direction);
+    
+    // create viable, cardinal snapLines around new vertex
+    for(const el of cardinal){
+        if(el.equals(last_direction)||(second_direction && el.equals(second_direction))){
+            continue;
+        }else if(el.y==0){
+            a = new THREE.Vector3(lastVertex.x,lastVertex.y,0);
+            b = new THREE.Vector3(el.x*window.innerWidth/2,lastVertex.y,0);
+        } else {
+            a = new THREE.Vector3(lastVertex.x,lastVertex.y,0);
+            b = new THREE.Vector3(lastVertex.x,el.y*window.innerHeight/2,0);
+        }
+    
+        const snapGeometry = new THREE.BufferGeometry().setFromPoints([a,b]);
+        const snapLine = new THREE.Line(snapGeometry, material);
+        snapLine.visible = true;
+        const group = new THREE.Group();
+        circle = drawCircle(lastVertex.x, lastVertex.y);
+        group.add(circle);
+        group.add(snapLine);
+        scene.add(group);
+        if(el.y==0){
+            h_snapLine.push(group);
+        } else { 
+            v_snapLine.push(group);
+        }
+    }
+}
+
 // handle mouse click
 function onMouseDown(event) {
-    // create first vertex
-    const rect = renderer.domElement.getBoundingClientRect();
-    const mouse = new THREE.Vector2();
+    event.preventDefault();
     
-    mouse.x = ( ( event.clientX - rect.left ) / ( rect.right - rect.left ) ) * 2 - 1;
-    mouse.y = - ( ( event.clientY - rect.top ) / ( rect.bottom - rect.top) ) * 2 + 1;
-
-    const raycaster = new THREE.Raycaster();
-    raycaster.setFromCamera(mouse, camera);
-
     if (vertices.length > 0) {
         const positionAttribute = lineGeometry.getAttribute('position');
+        if(vertices.length==1){
+            vertices[0] = new THREE.Vector3().fromBufferAttribute(positionAttribute, 0);
+        }
         const endpoint = new THREE.Vector3().fromBufferAttribute(positionAttribute, 1);
         // check if polygon is closed
         if (vertices.length > 2 && endpoint.distanceTo(vertices[0]) < 0.1) {
@@ -231,16 +245,19 @@ function onMouseDown(event) {
         vertices.push(endpoint);
     } else {
         // calculate intersection point with plane
-        const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
-        const point = new THREE.Vector3();
-        raycaster.ray.intersectPlane(plane, point);
-        vertices.push(point);
+        vertices.push(point.clone());
     }
     vertex = vertices[vertices.length-1];
-    // console.log(mouse.x,mouse.y,vertex);
-    setSnapLines(vertex, "horizontal");
-    setSnapLines(vertex, "vertical");
-    //render scene
+
+    if(vertices.length>1){
+        lastVertex = vertices[vertices.length-2];
+        secondLast = null; 
+        if(vertices.length>2){
+            secondLast = vertices[vertices.length-3];
+        }
+        setSnapLines(vertex, lastVertex, secondLast);
+    }
+        //render scene
     renderer.render(scene, camera);
 }
 
