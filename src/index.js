@@ -1,16 +1,13 @@
 // create Three.js scene, camera, and renderer
-console.log("My Three.js app is starting...");
-
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import './style.css';
 
-console.log("hello");
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, .1, 1000);
 const renderer = new THREE.WebGLRenderer({alpha: true});
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
-//document.body.style.background = 0x000000;
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableRotate = false;
 
@@ -22,7 +19,7 @@ let h_snapLine = [];
 let v_snapLine = [];
 let crossings = new THREE.Group();
 let previewGroup;
-let osnapOffset = window.innerHeight/500;
+let osnapOffset = .5;
 
 renderer.domElement.addEventListener('mousemove', onMouseMove);
 renderer.domElement.addEventListener('mousedown', onMouseDown);
@@ -51,7 +48,7 @@ function drawCircle(x,y){
 
 function drawPreview(snapGroup, lastVertex){
     previewGroup = snapGroup.clone();
-    ortho_vertex = previewGroup.children[0].position;
+    const ortho_vertex = previewGroup.children[0].position;
 
     if(ortho_vertex.x.toFixed(5)==lastVertex.x.toFixed(5)||ortho_vertex.y.toFixed(5)==lastVertex.y.toFixed(5)){
         return null;
@@ -82,7 +79,6 @@ var raycaster = new THREE.Raycaster();
 
 // handle mouse movement
 function onMouseMove(event) {
-    console.log("reading");
     event.preventDefault();
     mouse.x = ( ( event.clientX - rect.left ) / ( rect.right - rect.left ) ) * 2 - 1;
     mouse.y = - ( ( event.clientY - rect.top ) / ( rect.bottom - rect.top) ) * 2 + 1;
@@ -122,7 +118,7 @@ function onMouseMove(event) {
         const lastVertex = vertices[vertices.length - 1];
         const dx = Math.abs(point.x - lastVertex.x);
         const dy = Math.abs(point.y - lastVertex.y);
-        let snap_intersects, orthogonal_vertex;
+        let snap_intersects, orthogonal_vertex,snapSet;
         const order = [lastVertex, point];
         if (dx > dy) {
             // horizontal line
@@ -132,11 +128,11 @@ function onMouseMove(event) {
             // vertical line
             snapSet = h_snapLine;
         }
-        nextVertex = new THREE.Vector3(order[0].x, order[1].y, 0);
-        direction = new THREE.Vector3().subVectors(nextVertex, lastVertex);
+        let nextVertex = new THREE.Vector3(order[0].x, order[1].y, 0);
+        let direction = new THREE.Vector3().subVectors(nextVertex, lastVertex);
         
         if(segments.length>0){
-            parallel = lastVertex.clone().sub(vertices[vertices.length-2]).normalize();
+            const parallel = lastVertex.clone().sub(vertices[vertices.length-2]).normalize();
             if(direction.dot(parallel)<0){
                 order.reverse();
             }
@@ -171,7 +167,7 @@ function onMouseMove(event) {
                 if(intersection[0]){
                     if(intersection[0].distance<=lastVertex.distanceTo(nextVertex)){
                         if(!intersection[0].point.equals(vertices[0])){
-                            circle = drawIntersection(intersection[0].point);
+                            const circle = drawIntersection(intersection[0].point);
                             crossings.add(circle);
                             crossings.visible = true;
                             scene.add(crossings);
@@ -202,11 +198,12 @@ function setSnapLines(vertex, lastVertex, secondLast){
     //get unviable directions
     const last_direction = new THREE.Vector3().subVectors(vertex,lastVertex).normalize().round();
     let second_direction;
+    
     if(secondLast!=null){
         second_direction = new THREE.Vector3().subVectors(secondLast,lastVertex).normalize().round();
     }
-    console.log(last_direction, second_direction);
     
+    let a,b;
     // create viable, cardinal snapLines around new vertex
     for(const el of cardinal){
         if(el.equals(last_direction)||(second_direction&&el.equals(second_direction))){
@@ -223,7 +220,7 @@ function setSnapLines(vertex, lastVertex, secondLast){
         const snapLine = new THREE.Line(snapGeometry, material);
         snapLine.visible = true;
         const group = new THREE.Group();
-        circle = drawCircle(lastVertex.x, lastVertex.y);
+        const circle = drawCircle(lastVertex.x, lastVertex.y);
         group.add(circle);
         group.add(snapLine);
         scene.add(group);
@@ -250,7 +247,6 @@ function onMouseUp(event) {
 // handle mouse click
 function onMouseDown(event) {
     event.preventDefault();
-
     if(crossings.children.length>0){
         crossings.traverse((child) => {
             if (child instanceof THREE.Mesh) {
@@ -279,7 +275,7 @@ function onMouseDown(event) {
         }
         
         // add solid line to scene
-        solidLine = createSolidLine()
+        let solidLine = createSolidLine();
         scene.add(solidLine);
         segments.push(solidLine);
         vertices.push(endpoint);
@@ -287,11 +283,12 @@ function onMouseDown(event) {
         // calculate intersection point with plane
         vertices.push(point.clone());
     }
-    vertex = vertices[vertices.length-1];
+    console.log(vertices[vertices.length-1]);
+    const vertex = vertices[vertices.length-1];
 
     if(vertices.length>1){
-        lastVertex = vertices[vertices.length-2];
-        secondLast = null; 
+        const lastVertex = vertices[vertices.length-2];
+        let secondLast; 
         if(vertices.length>2){
             secondLast = vertices[vertices.length-3];
         }
