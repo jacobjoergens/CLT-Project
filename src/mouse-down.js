@@ -4,24 +4,31 @@ import { point, crossings, dottedLine, dottedGeometry, drawCircle } from "./mous
 
 //solidLine variables
 export let vertices = [];
-export let segments = [];
 
 //snapLine variables
 export let h_snapLine = [];
 export let v_snapLine = [];
 
-function createSolidLine() {
-    dottedLine.material.dispose();
-    const solidMaterial = new THREE.LineBasicMaterial({ color: 0xbfffbf });
-    dottedLine.material = solidMaterial;
-    var solidLine = dottedLine.clone();
-    dottedLine.geometry.dispose();
-    scene.remove(dottedLine);
-    return solidLine;
+
+const solidGeometry = new THREE.BufferGeometry();
+solidGeometry.setAttribute('position', new THREE.Float32BufferAttribute([], 3));
+const solidMaterial = new THREE.LineBasicMaterial({ color: 0xbfffbf });
+export const solidLine = new THREE.LineSegments(solidGeometry, solidMaterial);
+scene.add(solidLine);
+
+function updateSolidLine() {
+    solidGeometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices.flatMap(v => v.toArray()), 3));
+    const indices = [];
+    for (let i = 0; i < vertices.length - 1; i++) {
+      indices.push(i, i + 1);
+    }
+    solidGeometry.setIndex(indices);
+    solidLine.geometry.boundingSphere = null;
+    solidLine.geometry.attributes.position.needsUpdate = true;
+    console.log(vertices[vertices.length-1]);
 }
 
 function setSnapLines(vertex, lastVertex, secondLast){
-
     const material = new THREE.LineBasicMaterial({ color: 0xb8a5a3, opacity: 0.25, transparent: true});
 
     const cardinal = [
@@ -30,6 +37,7 @@ function setSnapLines(vertex, lastVertex, secondLast){
         new THREE.Vector3(0,1,0),
         new THREE.Vector3(0,-1,0)
     ];
+
     //get unviable directions
     const last_direction = new THREE.Vector3().subVectors(vertex,lastVertex).normalize().round();
     let second_direction;
@@ -53,11 +61,11 @@ function setSnapLines(vertex, lastVertex, secondLast){
     
         const snapGeometry = new THREE.BufferGeometry().setFromPoints([a,b]);
         const snapLine = new THREE.Line(snapGeometry, material);
-        snapLine.visible = true;
         const group = new THREE.Group();
-        const circle = drawCircle(lastVertex, 0xb8a5a3, false);
+        const circle = drawCircle(lastVertex, 0xb8a5a3, true);
         group.add(circle);
         group.add(snapLine);
+        group.visible = false;
         scene.add(group);
         if(el.y==0){
             h_snapLine.push(group);
@@ -80,6 +88,7 @@ export function onMouseDown(event){
     }
     if (vertices.length > 0) {
         const positionAttribute = dottedGeometry.getAttribute('position');
+        
         if (vertices.length == 1) {
             vertices[0] = new THREE.Vector3().fromBufferAttribute(positionAttribute, 0);
         }
@@ -88,8 +97,8 @@ export function onMouseDown(event){
         if (vertices.length > 2 && endpoint.distanceTo(vertices[0]) < 0.1) {
             console.log("polygon closed");
             // close polygon
-            solidLine = createSolidLine(vertices[vertices.length - 1], vertices[0])
-            scene.add(solidLine);
+            vertices.push(endpoint);
+            updateSolidLine(vertices);
             vertices = [];
             dottedLine = null;
             dottedGeometry = null;
@@ -97,14 +106,14 @@ export function onMouseDown(event){
         }
 
         // add solid line to scene
-        let solidLine = createSolidLine();
-        scene.add(solidLine);
-        segments.push(solidLine);
         vertices.push(endpoint);
+        updateSolidLine();
     } else {
-        // calculate intersection point with plane
+        // add first vertex
         vertices.push(point.clone());
+        updateSolidLine();
     }
+
     const vertex = vertices[vertices.length - 1];
 
     if (vertices.length > 1) {

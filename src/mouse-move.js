@@ -1,6 +1,7 @@
 import * as THREE from 'three';
+import { Vector3 } from 'three';
 import { scene, camera, renderer } from "./init.js";
-import { vertices, segments, h_snapLine, v_snapLine } from "./mouse-down.js";
+import { vertices, solidLine, h_snapLine, v_snapLine } from "./mouse-down.js";
 
 
 //initialize and export basic three variables
@@ -14,29 +15,41 @@ export let point = new THREE.Vector3();
 
 
 //dottedLine variables 
-export let dottedLine, dottedGeometry;
-
+const points = [new THREE.Vector3(0,0,0), new THREE.Vector3(0,1,0)];
+export let dottedLine;
+export const dottedGeometry = new THREE.BufferGeometry().setFromPoints(points);
+const dottedMaterial = new THREE.LineDashedMaterial({
+    color: 0xbfffbf,
+    dashSize: 0.25,
+    gapSize: 0.25,
+    opacity: 0.75,
+    transparent: true
+});
+dottedLine = new THREE.Line(dottedGeometry, dottedMaterial);
+dottedLine.computeLineDistances();
+dottedLine.visible = false;
+scene.add(dottedLine);
 
 //intersection variables
 export let crossings = new THREE.Group();
 
 // preview variables
-let previewGroup;
+let previewGroup = null;
 
 /*
 Description: renders a snapGroup, consisting of a snapLine and a vertex-marking circle, visible
 with one exception if the the vertex in question is the first vertex (here polygon-closing logic takes priority) 
 */
 function drawPreview(snapGroup, lastVertex){
-    previewGroup = snapGroup.clone();
+    previewGroup = snapGroup;
     const ortho_vertex = previewGroup.children[0].position;
 
     if(ortho_vertex.x.toFixed(5)==lastVertex.x.toFixed(5)||ortho_vertex.y.toFixed(5)==lastVertex.y.toFixed(5)){
         return null;
     } else {
-        previewGroup.children[0].visible = true;
-        previewGroup.children[1].visible = true;
-        scene.add(previewGroup);
+        // previewGroup.children[0].visible = true;
+        // previewGroup.children[1].visible = true;
+        previewGroup.visible = true;
         return ortho_vertex;
     }
 }
@@ -56,6 +69,15 @@ export function drawCircle(vertex, color, visibility){
     return circle;
 } 
 
+function updateDottedGeometry(lastVertex, nextVertex){
+    const positionAttribute = dottedGeometry.getAttribute('position');
+    dottedLine.visible = true;
+    positionAttribute.setXYZ(points.length - 2, lastVertex.x, lastVertex.y, lastVertex.z); 
+    positionAttribute.setXYZ(points.length - 1, nextVertex.x, nextVertex.y, nextVertex.z); 
+    dottedLine.computeLineDistances();
+    dottedLine.geometry.attributes.position.needsUpdate = true;
+}
+
 export function onMouseMove(event){
     event.preventDefault();
     mouse.x = ((event.clientX - rect.left) / (rect.right - rect.left)) * 2 - 1;
@@ -66,17 +88,12 @@ export function onMouseMove(event){
     raycaster.ray.intersectPlane(plane, point);
 
     if (vertices.length > 0) {
-        //reset scene wrt dottedLine
-        if (dottedLine) {
-            dottedLine.geometry.dispose();
-            scene.remove(dottedLine);
-        }
         if (previewGroup) {
             previewGroup.visible = false;
-            scene.remove(previewGroup);
             previewGroup = null;
         }
-        if (crossings.children) {
+
+        if (crossings.children.length>0) {
             crossings.visible = false;
             while (crossings.children.length > 0) {
                 crossings.remove(crossings.children[0]);
@@ -84,68 +101,54 @@ export function onMouseMove(event){
             scene.remove(crossings);
         }
 
-        //create dotted line
-        const material = new THREE.LineDashedMaterial({
-            color: 0xbfffbf,
-            dashSize: 0.1,
-            gapSize: 0.1,
-            opacity: 0.75,
-            transparent: true
-        });
-
         const lastVertex = vertices[vertices.length - 1];
+        let nextVertex;
         const dx = Math.abs(point.x - lastVertex.x);
         const dy = Math.abs(point.y - lastVertex.y);
-        let snap_intersects, orthogonal_vertex, snapSet;
+        let snap_intersects, orthogonal_vertex;
+        let snapSet = [h_snapLine, v_snapLine];
         const order = [lastVertex, point];
-        if (dx > dy) {
-            // horizontal line
+        let intersects;
+
+        if (dx > dy) { // horizontal line
             order.reverse();
-            snapSet = v_snapLine;
-        } else {
-            // vertical line
-            snapSet = h_snapLine;
-        }
-        let nextVertex = new THREE.Vector3(order[0].x, order[1].y, 0);
+            snapSet.reverse();
+        } 
+
+        nextVertex = new THREE.Vector3(order[0].x, order[1].y, 0);
         let direction = new THREE.Vector3().subVectors(nextVertex, lastVertex);
 
-        if (segments.length > 0) {
+        if(vertices.length>1){
             const parallel = lastVertex.clone().sub(vertices[vertices.length - 2]).normalize();
             if (direction.dot(parallel) < 0) {
                 order.reverse();
+                snapSet.reverse();
+                nextVertex.set(order[0].x, order[1].y, 0);
+                direction.subVectors(nextVertex, lastVertex);
             }
         }
-
+        const orthocaster = new THREE.Raycaster(nextVertex, direction.normalize());
         if (vertices.length > 2) {
-            snap_intersects = raycaster.intersectObjects(snapSet);
-            if (snap_intersects) {
-                if (snap_intersects[0]) {
-                    orthogonal_vertex = drawPreview(snap_intersects[0].object.parent, lastVertex);
-                    if (orthogonal_vertex) {
-                        order[order.indexOf(point)] = orthogonal_vertex;
-                    }
+            snap_intersects = orthocaster.intersectObjects(snapSet[0]);
+            if (snap_intersects && snap_intersects[0] && snap_intersects[0].distance<0.5) {
+                orthogonal_vertex = drawPreview(snap_intersects[0].object.parent, lastVertex);
+                if (orthogonal_vertex) {
+                    order[order.indexOf(point)] = orthogonal_vertex;
+                    nextVertex.set(order[0].x, order[1].y, 0);
                 }
             }
         }
-        nextVertex = new THREE.Vector3(order[0].x, order[1].y, 0);
-        direction = new THREE.Vector3().subVectors(nextVertex, lastVertex);
-        dottedGeometry = new THREE.BufferGeometry().setFromPoints([lastVertex, nextVertex]);
-        dottedLine = new THREE.Line(dottedGeometry, material);
-        dottedLine.computeLineDistances();
-
-
 
         const intersect_caster = new THREE.Raycaster(lastVertex, direction.normalize());
-        for (const seg of segments.slice(0, -1)) {
-            // Check for intersection between the ray and the line segment
-            const intersection = intersect_caster.intersectObject(seg);
-
-            // If there is an intersection, intersection will be a THREE.Vector3 object
-            if (intersection) {
-                if (intersection[0]) {
-                    if (intersection[0].distance <= lastVertex.distanceTo(nextVertex)) {
-                        if (!intersection[0].point.equals(vertices[0])) {
-                            const circle = drawCircle(intersection[0].point, 0xbb6a79, true);
+        if (vertices.length > 3) {
+            
+            intersects = intersect_caster.intersectObject(solidLine);
+            
+            if (intersects && intersects.length > 0) {
+                for (const intersect of intersects.slice(1)) {
+                    if(intersect.distance <= nextVertex.distanceTo(lastVertex)) {
+                        if (!intersect.point.equals(vertices[0])) {
+                            const circle = drawCircle(intersect.point, 0xbb6a79, true);
                             crossings.add(circle);
                             crossings.visible = true;
                             scene.add(crossings);
@@ -155,9 +158,13 @@ export function onMouseMove(event){
             }
         }
 
-        if (crossings.children != []) {
-            scene.add(dottedLine);
-        }
+        updateDottedGeometry(lastVertex, nextVertex);
+        
+        
+
+        // if (crossings.children != []) {
+        //     scene.add(dottedLine);
+        // }
     }
     // render scene
     renderer.render(scene, camera);
