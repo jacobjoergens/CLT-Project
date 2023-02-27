@@ -1,7 +1,6 @@
 import * as THREE from 'three';
-import { Vector3 } from 'three';
 import { scene, camera, renderer } from "./init.js";
-import { vertices, solidLine, h_snapLine, v_snapLine } from "./mouse-down.js";
+import { vertices, solidLine, h_snapLine, v_snapLine, curves } from "./mouse-down.js";
 
 
 //initialize and export basic three variables
@@ -11,13 +10,9 @@ const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
 let raycaster = new THREE.Raycaster();
 export let point = new THREE.Vector3();
 
-
-
-
 //dottedLine variables 
-const points = [new THREE.Vector3(0,0,0), new THREE.Vector3(0,1,0)];
 export let dottedLine;
-export const dottedGeometry = new THREE.BufferGeometry().setFromPoints(points);
+export const dottedGeometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,0)]);
 const dottedMaterial = new THREE.LineDashedMaterial({
     color: 0xbfffbf,
     dashSize: 0.25,
@@ -47,8 +42,6 @@ function drawPreview(snapGroup, lastVertex){
     if(ortho_vertex.x.toFixed(5)==lastVertex.x.toFixed(5)||ortho_vertex.y.toFixed(5)==lastVertex.y.toFixed(5)){
         return null;
     } else {
-        // previewGroup.children[0].visible = true;
-        // previewGroup.children[1].visible = true;
         previewGroup.visible = true;
         return ortho_vertex;
     }
@@ -72,8 +65,8 @@ export function drawCircle(vertex, color, visibility){
 function updateDottedGeometry(lastVertex, nextVertex){
     const positionAttribute = dottedGeometry.getAttribute('position');
     dottedLine.visible = true;
-    positionAttribute.setXYZ(points.length - 2, lastVertex.x, lastVertex.y, lastVertex.z); 
-    positionAttribute.setXYZ(points.length - 1, nextVertex.x, nextVertex.y, nextVertex.z); 
+    positionAttribute.setXYZ(0, lastVertex.x, lastVertex.y, lastVertex.z); 
+    positionAttribute.setXYZ(1, nextVertex.x, nextVertex.y, nextVertex.z); 
     dottedLine.computeLineDistances();
     dottedLine.geometry.attributes.position.needsUpdate = true;
 }
@@ -141,13 +134,17 @@ export function onMouseMove(event){
 
         const intersect_caster = new THREE.Raycaster(lastVertex, direction.normalize());
         if (vertices.length > 3) {
-            
-            intersects = intersect_caster.intersectObject(solidLine);
-            
+            intersects = intersect_caster.intersectObjects([solidLine,curves]);
             if (intersects && intersects.length > 0) {
                 for (const intersect of intersects.slice(1)) {
                     if(intersect.distance <= nextVertex.distanceTo(lastVertex)) {
-                        if (!intersect.point.equals(vertices[0])) {
+                        if (nextVertex.distanceTo(vertices[0]) <= 1) {
+                            const circle = drawCircle(intersect.point, 'green', true);
+                            crossings.add(circle);
+                            crossings.visible = true;
+                            scene.add(crossings);
+                            nextVertex.set(vertices[0].x,vertices[0].y,0);
+                        } else {
                             const circle = drawCircle(intersect.point, 0xbb6a79, true);
                             crossings.add(circle);
                             crossings.visible = true;
@@ -157,14 +154,7 @@ export function onMouseMove(event){
                 }
             }
         }
-
         updateDottedGeometry(lastVertex, nextVertex);
-        
-        
-
-        // if (crossings.children != []) {
-        //     scene.add(dottedLine);
-        // }
     }
     // render scene
     renderer.render(scene, camera);

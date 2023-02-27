@@ -1,16 +1,17 @@
 import * as THREE from 'three';
 import { scene, camera, renderer } from "./init.js";
-import { point, crossings, dottedLine, dottedGeometry, drawCircle } from "./mouse-move.js";
+import { point, crossings, dottedGeometry, drawCircle } from "./mouse-move.js";
 
 //solidLine variables
 export let vertices = [];
+export let curves =  new THREE.Group();
 
 //snapLine variables
 export let h_snapLine = [];
 export let v_snapLine = [];
 
 
-const solidGeometry = new THREE.BufferGeometry();
+let solidGeometry = new THREE.BufferGeometry();
 solidGeometry.setAttribute('position', new THREE.Float32BufferAttribute([], 3));
 const solidMaterial = new THREE.LineBasicMaterial({ color: 0xbfffbf });
 export const solidLine = new THREE.LineSegments(solidGeometry, solidMaterial);
@@ -25,7 +26,6 @@ function updateSolidLine() {
     solidGeometry.setIndex(indices);
     solidLine.geometry.boundingSphere = null;
     solidLine.geometry.attributes.position.needsUpdate = true;
-    console.log(vertices[vertices.length-1]);
 }
 
 function setSnapLines(vertex, lastVertex, secondLast){
@@ -75,12 +75,35 @@ function setSnapLines(vertex, lastVertex, secondLast){
     }
 }
 
+function closePolygon(){
+    // close polygon
+    console.log("close polygon");
+    vertices.push(vertices[0]);
+    updateSolidLine(vertices);
+    const curveMaterial = new THREE.LineBasicMaterial({ color: 'green' });
+    const curveGeometry = solidGeometry.clone();
+    const curve = new THREE.LineSegments(curveGeometry,curveMaterial);
+    curves.add(curve); 
+    solidGeometry.dispose();
+    solidGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(0), 3));
+    solidLine.geometry.attributes.position.needsUpdate = true;
+    vertices = [];
+    while (crossings.children.length > 0) {
+        crossings.remove(crossings.children[0]);
+    }
+    dottedGeometry.setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,0)]);
+}
+
 export function onMouseDown(event){
     event.preventDefault();
     if (crossings.children.length > 0) {
         crossings.traverse((child) => {
             if (child instanceof THREE.Mesh) {
+                if(child.material.color.equals(new THREE.Color('green'))){
+                    closePolygon();
+                }else{
                 child.material.color.set('red');
+                }
             }
         });
         renderer.render(scene, camera);
@@ -93,17 +116,6 @@ export function onMouseDown(event){
             vertices[0] = new THREE.Vector3().fromBufferAttribute(positionAttribute, 0);
         }
         const endpoint = new THREE.Vector3().fromBufferAttribute(positionAttribute, 1);
-        // check if polygon is closed
-        if (vertices.length > 2 && endpoint.distanceTo(vertices[0]) < 0.1) {
-            console.log("polygon closed");
-            // close polygon
-            vertices.push(endpoint);
-            updateSolidLine(vertices);
-            vertices = [];
-            dottedLine = null;
-            dottedGeometry = null;
-            return;
-        }
 
         // add solid line to scene
         vertices.push(endpoint);
@@ -124,6 +136,8 @@ export function onMouseDown(event){
         }
         setSnapLines(vertex, lastVertex, secondLast);
     }
+    
+    scene.add(curves);
     //render scene
     renderer.render(scene, camera);
 }

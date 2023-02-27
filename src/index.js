@@ -1,7 +1,6 @@
-import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import './style.css';
-import { scene,camera,renderer } from './init.js';
+import { scene, camera, renderer } from './init.js';
 
 // create OrbitControls for zooming and panning
 export const controls = new OrbitControls(camera, renderer.domElement);
